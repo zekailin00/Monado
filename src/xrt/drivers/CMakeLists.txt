@@ -56,6 +56,17 @@ if(XRT_BUILD_DRIVER_SIMULATED)
 	list(APPEND ENABLED_HEADSET_DRIVERS simulated)
 endif()
 
+if(XRT_BUILD_DRIVER_OFFLOAD)
+	add_library(
+		drv_offload STATIC offload/offload_hmd.c offload/offload_hmd.h
+					 offload/offload_socket.c offload/offload_socket.h
+				     offload/offload_interface.h offload/offload_prober.c
+		)
+	target_link_libraries(drv_offload PRIVATE xrt-interfaces aux_util)
+    # target_include_directories(drv_offload PRIVATE offload)
+	list(APPEND ENABLED_HEADSET_DRIVERS offload)
+endif()
+
 if(XRT_BUILD_DRIVER_TWRAP)
 	add_library(drv_twrap STATIC twrap/twrap_slam.c twrap/twrap_interface.h)
 	target_link_libraries(drv_twrap PRIVATE xrt-interfaces aux_util)

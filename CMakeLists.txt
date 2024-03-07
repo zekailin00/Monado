@@ -329,6 +329,7 @@ option_with_deps(XRT_BUILD_DRIVER_VF "Build video frame driver (for video file s
 option_with_deps(XRT_BUILD_DRIVER_VIVE "Enable driver for HTC Vive, Vive Pro, Valve Index, and their controllers" DEPENDS ZLIB_FOUND XRT_HAVE_LINUX XRT_MODULE_AUX_VIVE)
 option_with_deps(XRT_BUILD_DRIVER_WMR "Enable Windows Mixed Reality driver" DEPENDS "NOT WIN32")
 option_with_deps(XRT_BUILD_DRIVER_SIMULAVR "Enable simula driver" DEPENDS XRT_HAVE_REALSENSE)
+option(XRT_BUILD_DRIVER_OFFLOAD "Enable offload driver" ON)
 option(XRT_BUILD_DRIVER_SIMULATED "Enable simulated driver" ON)
 
 option(XRT_BUILD_SAMPLES "Enable compiling sample code implementations that will not be linked into any final targets" ON)
@@ -440,6 +441,7 @@ list(
 	"ARDUINO"
 	"DAYDREAM"
 	"SIMULATED"
+	"OFFLOAD"
 	"HANDTRACKING"
 	"HDK"
 	"HYDRA"

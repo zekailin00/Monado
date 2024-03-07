@@ -86,6 +86,10 @@ if(XRT_BUILD_DRIVER_SIMULATED)
 	target_link_libraries(target_lists PRIVATE drv_simulated)
 endif()
 
+if(XRT_BUILD_DRIVER_OFFLOAD)
+	target_link_libraries(target_lists PRIVATE drv_offload)
+endif()
+
 if(XRT_BUILD_DRIVER_HDK)
 	target_link_libraries(target_lists PRIVATE drv_hdk)
 endif()

@@ -20,6 +20,10 @@
 #include "simulated/simulated_interface.h"
 #endif
 
+#ifdef XRT_BUILD_DRIVER_OFFLOAD
+    #include "offload/offload_interface.h"
+#endif
+
 #ifdef XRT_BUILD_DRIVER_HDK
 #include "hdk/hdk_interface.h"
 #endif
@@ -238,6 +242,10 @@ xrt_auto_prober_create_func_t target_auto_list[] = {
 
 #ifdef XRT_BUILD_DRIVER_EUROC
     euroc_create_auto_prober,
+#endif
+
+#ifdef XRT_BUILD_DRIVER_OFFLOAD
+    offload_create_auto_prober,
 #endif
 
 #ifdef XRT_BUILD_DRIVER_SIMULATED
