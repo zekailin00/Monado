@@ -203,6 +203,10 @@ if(XRT_MODULE_COMPOSITOR_MAIN)
 		)
 	target_include_directories(comp_main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+	if(XRT_BUILD_DRIVER_OFFLOAD)
+		target_include_directories(comp_main PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../drivers/offload)
+	endif()
+
 	if(XRT_HAVE_XCB)
 		target_sources(comp_main PRIVATE main/comp_window_xcb.c)
 		target_include_directories(comp_main SYSTEM PRIVATE ${XCB_INCLUDE_DIRS})

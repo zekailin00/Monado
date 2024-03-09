@@ -49,6 +49,14 @@ struct comp_target_swapchain
 
 	struct
 	{
+		VkCommandBuffer cmd;
+		VkBuffer stagingBuffer;
+		VkDeviceMemory stagingBufferMemory;
+		unsigned char* buffer;
+	} imageBuffer;
+
+	struct
+	{
 		/*!
 		 * Should we ignore the compositor's preferred extents. Some
 		 * targets, like the direct mode ones, requires a particular

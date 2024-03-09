@@ -65,7 +65,7 @@ offload_hmd_get_tracked_pose(struct xrt_device *xdev,
     packet.payload = NULL;
     tx_enqueue(&packet);
 
-    while (!rx_dequeue(&packet))
+    while (!rx_dequeue(&packet, CS_RSP_POSE))
         /* Blocking wait for pose */;
     
     if (packet.header.command == CS_RSP_POSE &&

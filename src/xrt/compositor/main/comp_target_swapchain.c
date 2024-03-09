@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
+#include "offload_socket.h"
+
 
 /*
  *
@@ -806,6 +808,22 @@ comp_target_swapchain_create_images(struct comp_target *ct, const struct comp_ta
 	}
 #endif
 
+    unsigned int imageSize = cts->base.height * cts->base.width * 4;
+	cts->imageBuffer.buffer = (unsigned char*) calloc(imageSize, 1);
+    vk_buffer_init(vk, imageSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&cts->imageBuffer.stagingBuffer,
+        &cts->imageBuffer.stagingBufferMemory);
+	vk->vkMapMemory(vk->device, cts->imageBuffer.stagingBufferMemory,
+		0, imageSize, 0, (void*)&cts->imageBuffer.buffer);
+
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = cts->base.c->nr.cmd_pool;
+    allocInfo.commandBufferCount = 1;
+   	vk->vkAllocateCommandBuffers(vk->device, &allocInfo, &cts->imageBuffer.cmd);
 	// Done now.
 	return;
 
@@ -876,6 +894,70 @@ comp_target_swapchain_present(struct comp_target *ct,
 	    .pSwapchains = &cts->swapchain.handle,
 	    .pImageIndices = &index,
 	};
+
+
+	if (cts->base.c->xdev->name == XRT_DEVICE_GENERIC_HMD)
+	{
+        struct render_resources* nr = &cts->base.c->nr;
+		VkCommandBuffer cmd = cts->imageBuffer.cmd;
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vk->vkBeginCommandBuffer(cmd, &beginInfo);
+
+        VkImageSubresourceRange range = {};
+        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        range.baseArrayLayer = 0;
+        range.layerCount = 1;
+        range.baseMipLevel = 0;
+        range.levelCount = 1;
+        vk_cmd_image_barrier_gpu_locked(vk, cmd, cts->base.images[index].handle,
+            VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            range);
+        
+        VkBufferImageCopy region = {};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset.x = 0;
+        region.imageOffset.y = 0;
+        region.imageOffset.z = 0;
+        region.imageExtent.width = cts->base.width;
+        region.imageExtent.height = cts->base.height;
+        region.imageExtent.depth = 1;
+
+        vk->vkCmdCopyImageToBuffer(
+            cmd, cts->base.images[index].handle,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			cts->imageBuffer.stagingBuffer, 1, &region);
+
+        vk_cmd_image_barrier_gpu_locked(vk, cmd, cts->base.images[index].handle,
+            VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            range);
+        
+        vk->vkEndCommandBuffer(cmd);
+
+        VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cmd;
+
+        vk->vkQueueSubmit(vk->queue, 1, &submitInfo, NULL);
+        vk->vkQueueWaitIdle(vk->queue);
+
+		{ 	// Create packet
+			message_packet_t packet = {};
+			packet.header.command = CS_REQ_IMG;
+			packet.header.payload_size = cts->base.width * cts->base.height * 4;
+			packet.payload = cts->imageBuffer.buffer;
+			tx_enqueue(&packet);
+		}
+	}
 
 
 	// Need to take the queue lock for present.

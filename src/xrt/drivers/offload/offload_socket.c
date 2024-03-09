@@ -23,55 +23,73 @@
         exit(EXIT_FAILURE);                     \
     }
 
-#define LOG(msg) do {           \
-        printf("%s\n", msg);    \
-    } while(0)
+// #define LOG(msg) do {           \
+//         printf("%s\n", msg);    \
+//     } while(0)
+#define LOG(msg)
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
-message_packet_t message_packet_rx;
-message_packet_t message_packet_tx;
-bool rx_enqueued = false, tx_enqueued = false;
+#define PACKET_BUFFER_SIZE 32
+message_packet_t message_packet_rx[PACKET_BUFFER_SIZE];
+message_packet_t message_packet_tx[PACKET_BUFFER_SIZE];
+int rx_index = 0, tx_index = 0;
+pthread_mutex_t rx_lock, tx_lock;
 
 void tx_enqueue(message_packet_t* packet)
 {
-    message_packet_tx = *packet;
-    tx_enqueued = true;
+    pthread_mutex_lock(&tx_lock);
+    message_packet_tx[tx_index++] = *packet;
+    pthread_mutex_unlock(&tx_lock);
 }
 
-void tx_dequeue(message_packet_t* packet)
+bool tx_dequeue(message_packet_t* packet)
 {
-    *packet = message_packet_tx;
-    tx_enqueued = false;
+    pthread_mutex_lock(&tx_lock);
+    if (tx_index > 0)
+    {
+        *packet = message_packet_tx[tx_index-1];
+        tx_index--;
+        pthread_mutex_unlock(&tx_lock);
+        return true;
+    }
+    pthread_mutex_unlock(&tx_lock);
+    return false;
 }
 
 void rx_enqueue(message_packet_t* packet)
 {
-    message_packet_rx = *packet;
-    rx_enqueued = true;
+    pthread_mutex_lock(&rx_lock);
+    message_packet_rx[rx_index++] = *packet;
+    pthread_mutex_unlock(&rx_lock);
 }
 
-bool rx_dequeue(message_packet_t* packet)
+bool rx_dequeue(message_packet_t* packet, enum socket_protocol protocol)
 {
-    if (!rx_enqueue)
+    pthread_mutex_lock(&rx_lock);
+
+    if (rx_index > 0 && message_packet_rx[rx_index-1].header.command == protocol)
     {
-        return false;
+        *packet = message_packet_rx[rx_index-1];
+        rx_index--;
+        // printf("prot: %d; pcak: %d\n", protocol, packet->header.command);
+        pthread_mutex_unlock(&rx_lock);
+        return true;
     }
 
-    *packet = message_packet_rx;
-    rx_enqueued = false;
-    return true;
+    pthread_mutex_unlock(&rx_lock);
+    return false;
 }
 
 void *socket_thread(void* arg)
 {
     struct offload_hmd* hmd = (struct offload_hmd*) arg;
 
+    pthread_mutex_init(&tx_lock, NULL);
+    pthread_mutex_init(&rx_lock, NULL);
+
     int server_fd, new_socket;
-    ssize_t valread;
     int opt = 1;
-    char buffer[1024] = { 0 };
-    char* hello = "Hello from server";
  
     // Creating socket file descriptor
     SOCKET_CHECK((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0);
@@ -89,17 +107,14 @@ void *socket_thread(void* arg)
     // Forcefully attaching socket to the port
     SOCKET_CHECK(bind(server_fd, (struct sockaddr*)&address, sizeof(address)));
     SOCKET_CHECK(listen(server_fd, 3) < 0)
-
     SOCKET_CHECK((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0);
 
+    message_packet_t packet;
     while (!hmd->stop)
     {
         // Handle TX
-        if (tx_enqueued)
+        if (tx_dequeue(&packet))
         {
-            message_packet_t packet;
-            tx_dequeue(&packet);
-
             size_t size_sent = send(new_socket, &packet, sizeof(header_t), 0);
             STATUS_CHECK(size_sent != sizeof(header_t), "DEBUG: failed to send header");
 
@@ -116,12 +131,11 @@ void *socket_thread(void* arg)
                     STATUS_CHECK(bytes_sent == -1, "DEBUG: failed to send everything");
                     index += bytes_sent;
                 }
-                free(packet.payload);
+                // free(packet.payload); FIXME:
             }
         }
 
         // Handle RX
-        message_packet_t packet;
         while (recv(new_socket, &packet.header, sizeof(header_t), MSG_PEEK | MSG_DONTWAIT) > 0)
         {
             LOG("DEBUG: new data is arriving");
