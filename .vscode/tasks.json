@@ -1,0 +1,34 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "remove_monado_ipc",
+            "type": "shell",
+            "command": "rm -f ${env:XDG_RUNTIME_DIR}/monado_comp_ipc"
+        },
+        {
+            "label": "Configure Monado service",
+            "type": "shell",
+            "command": "cmake -B=build -S=. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/drops -DXRT_HAVE_JPEG=OFF -DXRT_HAVE_TRACY=ON -DXRT_FEATURE_TRACING=ON -DXRT_HAVE_WAYLAND=OFF -DXRT_HAVE_WAYLAND_DIRECT=OFF -DXRT_BUILD_DRIVER_OFFLOAD=ON"
+        },
+        {
+            "label": "Build Monado service",
+            "type": "shell",
+            "command": "cmake --build build",
+            "dependsOn":["Configure Monado service"]
+        },
+        {
+            "label": "Install Monado service",
+            "type": "shell",
+            "command": "cmake --install build",
+            "dependsOn":["Build Monado service"]
+        },
+        {
+            "label": "Clean build",
+            "type": "shell",
+            "command": "rm -rf build"
+        }
+    ]
+}

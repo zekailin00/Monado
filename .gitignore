@@ -48,7 +48,7 @@ build*/
 cmake-build-*/
 
 # Ignore local settings
-.vscode
+# .vscode
 *.autosave
 .vs
 CMakeSettings.json

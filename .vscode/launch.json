@@ -1,0 +1,91 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+      {
+          "name": "Monado Service Debug",
+          "type": "cppdbg",
+          "request": "launch",
+          "program": "${workspaceFolder}/build/drops/bin/monado-service",
+          "args": [],
+          "stopAtEntry": false,
+          "cwd": "${workspaceFolder}",
+          "environment": [
+              // { "name": "XRT_TRACING", "value": "true" },
+              // { "name": "XRT_DEBUG_GUI", "value": "true" }, // open debug gui
+              // { "name": "IPC_LOG", "value": "0" }, // IPC logging
+              // { "name": "XRT_LOG", "value": "0" }, // global log logging
+              // { "name": "XRT_COMPOSITOR_LOG", "value": "0" }, // global log logging
+              // { "name": "OXR_VULKAN_LOG", "value": "0" }, // global log logging
+              // { "name": "VIT_SYSTEM_LIBRARY_PATH", "value": "/home/zekailin00/Desktop/basalt/drops/lib/libbasalt.so" },
+              { "name": "XR_RUNTIME_JSON", "value": "/home/zekailin00/Desktop/ILLIXR/build/drops/share/openxr/1/openxr_monado.json" },
+          ],
+          "externalConsole": false,
+          "MIMode": "gdb",
+          "miDebuggerPath": "/usr/bin/gdb",
+          "setupCommands": [
+            {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+            }
+          ],
+          "preLaunchTask": "remove_monado_ipc"
+        },
+        {
+          "name": "Openxr App Debug",
+          "type": "cppdbg",
+          "request": "launch",
+          "program": "${workspaceFolder}/build/drops/bin/openxr-example",
+          "args": [],
+          "stopAtEntry": true,
+          "cwd": "${workspaceFolder}",
+          "environment": [
+              { "name": "IXIR_PTH", "value": "/home/zekailin00/Desktop/ILLIXR/build/drops/lib" },
+              { "name": "LD_LIBRARY_PATH", "value": "/home/zekailin00/Desktop/ILLIXR/build/drops/lib" },
+              { "name": "XR_RUNTIME_JSON", "value": "/home/zekailin00/Desktop/ILLIXR/build/drops/share/openxr/1/openxr_monado.json" },
+              { "name": "IPC_LOG", "value": "0" }, // IPC logging
+              { "name": "XRT_LOG", "value": "0" }, // global log logging
+              { "name": "XRT_COMPOSITOR_LOG", "value": "0" }, // global log logging
+            ],
+          "externalConsole": false,
+          "MIMode": "gdb",
+          "miDebuggerPath": "/usr/bin/gdb",
+          "setupCommands": [
+            {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+            }
+          ]
+        },
+        {
+          "name": "Monado Gui Debug",
+          "type": "cppdbg",
+          "request": "launch",
+          "program": "${workspaceFolder}/build/drops/bin/monado-gui",
+          "args": [],
+          "stopAtEntry": true,
+          "cwd": "${workspaceFolder}",
+          "environment": [
+              { "name": "IPC_LOG", "value": "0" }, // IPC logging
+              { "name": "XRT_LOG", "value": "0" }, // global log logging
+              { "name": "XRT_COMPOSITOR_LOG", "value": "0" }, // global log logging
+              { "name": "VIT_SYSTEM_LIBRARY_PATH", "value": "/home/zekailin00/Desktop/basalt/drops/lib/libbasalt.so" },
+              { "name": "XRT_TRACING", "value": "true" },
+            ],
+          "externalConsole": false,
+          "MIMode": "gdb",
+          "miDebuggerPath": "/usr/bin/gdb",
+          "setupCommands": [
+            {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+            }
+          ]
+        }
+  ]
+}
