@@ -29,18 +29,20 @@ enum socket_protocol
     // CS_RSP_DEPTH_STREAM = 0x15,
 
     // CS_SET_TARGETS  = 0x20,
+    
+    CS_GRANT_TOKEN = 0x80,
+    CS_DEFINE_STEP = 0x83,
+    CS_RSP_STALL   = 0x84,
 
     CS_REQ_POSE = 1u,
     CS_RSP_POSE = 2u,
     CS_REQ_IMG  = 3u,
-    CS_RSP_IMG  = 4u,
 };
 
-// static const int IMTCMDS[8] = {
-//     CS_GRANT_TOKEN, CS_REQ_CYCLES, CS_RSP_CYCLES, 
-//     CS_DEFINE_STEP, CS_RSP_STALL, CS_RSP_IMG,
-//     CS_CFG_BW, CS_RSP_IMG_POLL
-// };
+#define PORT 8080
+#define QUEUE_SIZE 32
+
+static int SIM_STEP_SIZE = 100000000;
 
 typedef struct header
 {

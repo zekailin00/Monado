@@ -9,9 +9,11 @@
 #include "offload_interface.h"
 #include "offload_socket.h"
 #include "offload_hmd.h"
+#include "offload_protocol.h"
 
 #include <stdio.h>
 #include <pthread.h>
+#include <assert.h>
 
 
 /*
@@ -57,8 +59,6 @@ offload_hmd_get_tracked_pose(struct xrt_device *xdev,
 		return;
 	}
 
-#define BLOCKING_POSE
-#ifdef BLOCKING_POSE
     message_packet_t packet;
     packet.header.command = CS_REQ_POSE;
     packet.header.payload_size = 0;
@@ -68,24 +68,11 @@ offload_hmd_get_tracked_pose(struct xrt_device *xdev,
     while (!rx_dequeue(&packet, CS_RSP_POSE))
         /* Blocking wait for pose */;
     
-    if (packet.header.command == CS_RSP_POSE &&
-        packet.header.payload_size == sizeof(struct xrt_pose))
-    {
-        memcpy(&hmd->pose, packet.payload, sizeof(struct xrt_pose));
-    }
-    // free(packet.payload); //FIXME: make a wrapper
-#else
-    message_packet_t packet;
-    if (rx_dequeue(&packet))
-    {
-        if (packet.header.command == CS_RSP_POSE &&
-            packet.header.payload_size == sizeof(struct xrt_pose))
-        {
-            memcpy(&hmd->pose, packet.payload, sizeof(struct xrt_pose));
-        }
-        free(packet.payload); //FIXME: make a wrapper
-    }
-#endif
+    assert(packet.header.command == CS_RSP_POSE &&
+		   packet.header.payload_size == sizeof(struct xrt_pose));
+    
+    memcpy(&hmd->pose, packet.payload, sizeof(struct xrt_pose));
+	free(packet.payload); //FIXME: Free buffer allocated by socket
 
 	out_relation->pose = hmd->pose;
 	out_relation->relation_flags = (enum xrt_space_relation_flags)(XRT_SPACE_RELATION_ORIENTATION_VALID_BIT |
@@ -194,6 +181,19 @@ offload_hmd_create(enum offload_movement movement, const struct xrt_pose *center
 
 
 	pthread_create(&hmd->socket_thread, NULL, socket_thread, hmd);
+
+    message_packet_t packet;
+	// # send firesim step 
+    packet.header.command = CS_DEFINE_STEP;
+    packet.header.payload_size = sizeof(int);
+    packet.payload = (char*) &SIM_STEP_SIZE;
+    tx_enqueue(&packet);
+
+	// # grant token to RoseBridge 
+    packet.header.command = CS_GRANT_TOKEN;
+    packet.header.payload_size = 0;
+    tx_enqueue(&packet);
+
 
 	return &hmd->base;
 }

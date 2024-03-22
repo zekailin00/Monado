@@ -9,7 +9,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define PORT 8080
+#include "queue.h"
 
 #define SOCKET_CHECK(status) if (status < 0)    \
     {                                           \
@@ -23,61 +23,71 @@
         exit(EXIT_FAILURE);                     \
     }
 
-// #define LOG(msg) do {           \
-//         printf("%s\n", msg);    \
-//     } while(0)
+
+#ifndef NDEBUG
+#define LOG(msg, ...) do {                  \
+        printf(msg "\n", __VA_ARGS__);      \
+    } while(0)
+#else
 #define LOG(msg)
+#endif
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
-#define PACKET_BUFFER_SIZE 32
-message_packet_t message_packet_rx[PACKET_BUFFER_SIZE];
-message_packet_t message_packet_tx[PACKET_BUFFER_SIZE];
-int rx_index = 0, tx_index = 0;
-pthread_mutex_t rx_lock, tx_lock;
+message_queue_t tx_queue = {
+    .frontIdx = 0,
+    .rearIdx = QUEUE_SIZE - 1,
+    .size = 0,
+    .capacity = QUEUE_SIZE
+};
+
+message_queue_t rx_queue = {
+    .frontIdx = 0,
+    .rearIdx = QUEUE_SIZE - 1,
+    .size = 0,
+    .capacity = QUEUE_SIZE
+};
+
+pthread_mutex_t lock;
 
 void tx_enqueue(message_packet_t* packet)
 {
-    pthread_mutex_lock(&tx_lock);
-    message_packet_tx[tx_index++] = *packet;
-    pthread_mutex_unlock(&tx_lock);
+    pthread_mutex_lock(&lock);
+    STATUS_CHECK(false == enqueue(&tx_queue, packet),
+        "Failed to enqueue message: queue is full");
+    pthread_mutex_unlock(&lock);
 }
 
 bool tx_dequeue(message_packet_t* packet)
 {
-    pthread_mutex_lock(&tx_lock);
-    if (tx_index > 0)
+    pthread_mutex_lock(&lock);
+    if (dequeue(&tx_queue, packet))
     {
-        *packet = message_packet_tx[tx_index-1];
-        tx_index--;
-        pthread_mutex_unlock(&tx_lock);
+        pthread_mutex_unlock(&lock);
         return true;
     }
-    pthread_mutex_unlock(&tx_lock);
+    pthread_mutex_unlock(&lock);
     return false;
 }
 
 void rx_enqueue(message_packet_t* packet)
 {
-    pthread_mutex_lock(&rx_lock);
-    message_packet_rx[rx_index++] = *packet;
-    pthread_mutex_unlock(&rx_lock);
+    pthread_mutex_lock(&lock);
+    STATUS_CHECK(false == enqueue(&rx_queue, packet),
+        "Failed to enqueue message: queue is full");
+    pthread_mutex_unlock(&lock);
 }
 
 bool rx_dequeue(message_packet_t* packet, enum socket_protocol protocol)
 {
-    pthread_mutex_lock(&rx_lock);
-
-    if (rx_index > 0 && message_packet_rx[rx_index-1].header.command == protocol)
+    pthread_mutex_lock(&lock);
+    if (front(&rx_queue, packet) && packet->header.command == protocol)
     {
-        *packet = message_packet_rx[rx_index-1];
-        rx_index--;
-        // printf("prot: %d; pcak: %d\n", protocol, packet->header.command);
-        pthread_mutex_unlock(&rx_lock);
+        dequeue(&rx_queue, packet);
+        pthread_mutex_unlock(&lock);
         return true;
     }
-
-    pthread_mutex_unlock(&rx_lock);
+    pthread_mutex_unlock(&lock);
     return false;
 }
 
@@ -85,8 +95,7 @@ void *socket_thread(void* arg)
 {
     struct offload_hmd* hmd = (struct offload_hmd*) arg;
 
-    pthread_mutex_init(&tx_lock, NULL);
-    pthread_mutex_init(&rx_lock, NULL);
+    pthread_mutex_init(&lock, NULL);
 
     int server_fd, new_socket;
     int opt = 1;
@@ -127,18 +136,19 @@ void *socket_thread(void* arg)
                     const char* data_ptr = packet.payload + index;
                     ssize_t bytes_sent = send(new_socket, data_ptr, chunk_size, 0);
     
-                    LOG("DEBUG: sent "); //TODO: print number
                     STATUS_CHECK(bytes_sent == -1, "DEBUG: failed to send everything");
                     index += bytes_sent;
                 }
-                // free(packet.payload); FIXME:
             }
+            LOG("DEBUG: [offload_socket.c] OUT cmd[%d] and size %d",
+                packet.header.command, packet.header.payload_size);
         }
 
         // Handle RX
         while (recv(new_socket, &packet.header, sizeof(header_t), MSG_PEEK | MSG_DONTWAIT) > 0)
         {
-            LOG("DEBUG: new data is arriving");
+            LOG("DEBUG: [offload_socket.c] IN  cmd[%d] and size %d",
+                packet.header.command, packet.header.payload_size);
 
             ssize_t received = recv(new_socket, &packet.header, sizeof(header_t), 0);
             STATUS_CHECK(received != sizeof(header_t), "Error receiving header");
@@ -161,6 +171,20 @@ void *socket_thread(void* arg)
                 }
             }
 
+            if (packet.header.command == CS_RSP_STALL)
+            {
+                LOG("DEBUG: [offload_socket.c] Hit stall, exiting, cmd[%d]", packet.header.command);
+                exit(1);
+            }
+
+#ifndef NDEBUG
+            if (packet.header.command == CS_RSP_POSE)
+            {
+                float* buf = (float*)packet.payload;
+                LOG("DEBUG: [offload_socket.c] cmd[%d]: pose.translation <%f, %f, %f>",
+                    packet.header.command, buf[4], buf[5], buf[6]);
+            }
+#endif
             rx_enqueue(&packet);
         }
     }
