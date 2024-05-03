@@ -59,7 +59,7 @@ endif()
 if(XRT_BUILD_DRIVER_OFFLOAD)
 	add_library(
 		drv_offload STATIC offload/offload_hmd.c offload/offload_hmd.h
-					 offload/offload_socket.c offload/offload_socket.h
+					 offload/offload_socket.cpp offload/offload_socket.h
 				     offload/offload_interface.h offload/offload_prober.c
 		)
 	target_link_libraries(drv_offload PRIVATE xrt-interfaces aux_util)

@@ -9,7 +9,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "queue.h"
+#include <queue>
+#include <map>
+#include <mutex>
 
 #define SOCKET_CHECK(status) if (status < 0)    \
     {                                           \
@@ -22,7 +24,11 @@
         perror("ERROR: " #msg "\n");            \
         exit(EXIT_FAILURE);                     \
     }
-
+#define CONNECTION_CHECK(status) if (status <= 0)           \
+    {                                                       \
+        LOG("Device disconntected, status: %ld", status);   \
+        return;                                             \
+    }
 
 #ifndef NDEBUG
 #define LOG(msg, ...) do {                  \
@@ -34,97 +40,124 @@
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
-message_queue_t tx_queue = {
-    .frontIdx = 0,
-    .rearIdx = QUEUE_SIZE - 1,
-    .size = 0,
-    .capacity = QUEUE_SIZE
-};
 
-message_queue_t rx_queue = {
-    .frontIdx = 0,
-    .rearIdx = QUEUE_SIZE - 1,
-    .size = 0,
-    .capacity = QUEUE_SIZE
-};
-
-pthread_mutex_t lock;
+std::map<int, std::queue<message_packet_t>> rx_queues;
+std::queue<message_packet_t> tx_queue;
+std::mutex lock;
+bool deviceConnected = false;
 
 void tx_enqueue(message_packet_t* packet)
 {
-    pthread_mutex_lock(&lock);
-    STATUS_CHECK(false == enqueue(&tx_queue, packet),
-        "Failed to enqueue message: queue is full");
-    pthread_mutex_unlock(&lock);
+    if (!deviceConnected)
+        return;
+    std::lock_guard<std::mutex> guard(lock);
+    tx_queue.push(*packet);
 }
 
 bool tx_dequeue(message_packet_t* packet)
 {
-    pthread_mutex_lock(&lock);
-    if (dequeue(&tx_queue, packet))
+    std::lock_guard<std::mutex> guard(lock);
+    bool isEmpty = tx_queue.empty();
+    if (!isEmpty)
     {
-        pthread_mutex_unlock(&lock);
-        return true;
+        *packet = tx_queue.front();
+        tx_queue.pop();
     }
-    pthread_mutex_unlock(&lock);
-    return false;
+    return !isEmpty;
 }
 
 void rx_enqueue(message_packet_t* packet)
 {
-    pthread_mutex_lock(&lock);
-    STATUS_CHECK(false == enqueue(&rx_queue, packet),
-        "Failed to enqueue message: queue is full");
-    pthread_mutex_unlock(&lock);
+    std::lock_guard<std::mutex> guard(lock);
+    rx_queues[packet->header.command].push(*packet);
 }
 
 bool rx_dequeue(message_packet_t* packet, enum socket_protocol protocol)
 {
-    pthread_mutex_lock(&lock);
-    if (front(&rx_queue, packet) && packet->header.command == protocol)
+    std::lock_guard<std::mutex> guard(lock);
+    bool isEmpty = rx_queues[protocol].empty();
+    if (!isEmpty)
     {
-        dequeue(&rx_queue, packet);
-        pthread_mutex_unlock(&lock);
-        return true;
+        *packet = rx_queues[protocol].front();
+        rx_queues[protocol].pop();
     }
-    pthread_mutex_unlock(&lock);
-    return false;
+    return !isEmpty;
 }
+
+char* allocate_payload(unsigned int size)
+{
+    return (char*)malloc(size);
+}
+
+void free_payload(char* payload)
+{
+    free(payload);
+}
+
+void process_device(struct offload_hmd *hmd, int new_socket);
 
 void *socket_thread(void* arg)
 {
     struct offload_hmd* hmd = (struct offload_hmd*) arg;
 
-    pthread_mutex_init(&lock, NULL);
-
     int server_fd, new_socket;
     int opt = 1;
  
     // Creating socket file descriptor
-    SOCKET_CHECK((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0);
+    SOCKET_CHECK((server_fd = socket(AF_INET, SOCK_STREAM, 0)));
  
     // Forcefully attaching socket to the port
     SOCKET_CHECK(setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)));
 
-    struct sockaddr_in address = {
-        .sin_family = AF_INET,
-        .sin_addr.s_addr = INADDR_ANY,
-        .sin_port = htons(PORT),
-    };
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_port = htons(PORT);
+    address.sin_addr.s_addr = INADDR_ANY;
+    
     socklen_t addrlen = sizeof(address);
  
     // Forcefully attaching socket to the port
     SOCKET_CHECK(bind(server_fd, (struct sockaddr*)&address, sizeof(address)));
-    SOCKET_CHECK(listen(server_fd, 3) < 0)
-    SOCKET_CHECK((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0);
+    SOCKET_CHECK(listen(server_fd, 3))
 
+    // Loop waiting for one device connection
+    while ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen))
+        && !hmd->stop)
+    {
+        deviceConnected =true;
+        process_device(hmd, new_socket);
+        deviceConnected = false;
+        rx_queues.clear();
+        tx_queue = std::queue<message_packet_t>();
+    }
+
+    pthread_exit(NULL);
+}
+
+void process_device(struct offload_hmd *hmd, int new_socket)
+{
+    SOCKET_CHECK(new_socket);
+    LOG("New device connected with ID: %d", new_socket);
     message_packet_t packet;
+
+    // # send firesim step 
+    packet.header.command = CS_DEFINE_STEP;
+    packet.header.payload_size = sizeof(int);
+    packet.payload = (char*) &SIM_STEP_SIZE;
+    tx_enqueue(&packet);
+
+    // # grant token to RoseBridge 
+    packet.header.command = CS_GRANT_TOKEN;
+    packet.header.payload_size = 0;
+    tx_enqueue(&packet);
+
     while (!hmd->stop)
     {
         // Handle TX
         if (tx_dequeue(&packet))
         {
-            size_t size_sent = send(new_socket, &packet, sizeof(header_t), 0);
+            ssize_t size_sent = send(new_socket, &packet, sizeof(header_t), 0);
+            CONNECTION_CHECK(size_sent);
             STATUS_CHECK(size_sent != sizeof(header_t), "DEBUG: failed to send header");
 
             if (packet.header.payload_size != 0)
@@ -135,8 +168,8 @@ void *socket_thread(void* arg)
                     size_t chunk_size = MIN(1024ul, packet.header.payload_size - index);
                     const char* data_ptr = packet.payload + index;
                     ssize_t bytes_sent = send(new_socket, data_ptr, chunk_size, 0);
-    
-                    STATUS_CHECK(bytes_sent == -1, "DEBUG: failed to send everything");
+
+                    CONNECTION_CHECK(bytes_sent);
                     index += bytes_sent;
                 }
             }
@@ -145,12 +178,14 @@ void *socket_thread(void* arg)
         }
 
         // Handle RX
-        while (recv(new_socket, &packet.header, sizeof(header_t), MSG_PEEK | MSG_DONTWAIT) > 0)
+        ssize_t connect_status;
+        while ((connect_status = recv(new_socket, &packet.header, sizeof(header_t), MSG_PEEK | MSG_DONTWAIT)) > 0)
         {
             LOG("DEBUG: [offload_socket.c] IN  cmd[%d] and size %d",
                 packet.header.command, packet.header.payload_size);
 
             ssize_t received = recv(new_socket, &packet.header, sizeof(header_t), 0);
+            CONNECTION_CHECK(received);
             STATUS_CHECK(received != sizeof(header_t), "Error receiving header");
 
             if (packet.header.payload_size != 0)
@@ -159,13 +194,14 @@ void *socket_thread(void* arg)
                 packet.payload = (char *) malloc(payload_size);
                 STATUS_CHECK(packet.payload == NULL, "Error allocating memory for message data");
             
-                size_t bytes_received = 0;
+                int bytes_received = 0;
                 while (bytes_received < payload_size)
                 {
-                    size_t chunk_size = MIN(1024ul, payload_size - bytes_received);
+                    size_t chunk_size = MIN(1024, payload_size - bytes_received);
                     char* data_ptr = packet.payload + bytes_received;
                     ssize_t chunk_bytes_received = recv(new_socket, data_ptr, chunk_size, 0);
 
+                    CONNECTION_CHECK(chunk_bytes_received);
                     STATUS_CHECK(chunk_bytes_received == -1, "Error receiving message data");
                     bytes_received += chunk_bytes_received;
                 }
@@ -187,5 +223,10 @@ void *socket_thread(void* arg)
 #endif
             rx_enqueue(&packet);
         }
+        if (connect_status == 0) {
+            LOG("Device disconntected, status: %ld", connect_status);
+            return;
+        }
     }
+    LOG("Device disconnected with ID: %d", new_socket);
 }

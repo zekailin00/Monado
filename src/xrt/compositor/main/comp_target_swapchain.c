@@ -952,7 +952,7 @@ comp_target_swapchain_present(struct comp_target *ct,
 
 		{ 	// Create packet
 			message_packet_t packet = {};
-			packet.header.command = CS_REQ_IMG;
+			packet.header.command = CS_RSP_IMG;
 			packet.header.payload_size = cts->base.width * cts->base.height * 4;
 			packet.payload = cts->imageBuffer.buffer;
 			tx_enqueue(&packet);
