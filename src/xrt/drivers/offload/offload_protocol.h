@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#define FIRESIM
+
 enum socket_protocol
 {
     // CS_GRANT_TOKEN  = 0x80,
@@ -33,13 +35,27 @@ enum socket_protocol
     CS_GRANT_TOKEN = 0x80,
     CS_DEFINE_STEP = 0x83,
     CS_RSP_STALL   = 0x84,
+    CS_CFG_BW      = 0x85,
+    CS_CFG_ROUTE   = 0x86,
 
+
+#ifdef FIRESIM
+    CS_REQ_POSE = 0x10,
+    CS_RSP_POSE = 0x11,
+    CS_RSP_IMG  = 0x12
+#else
     CS_REQ_POSE = 1u,
     CS_RSP_POSE = 2u,
     CS_RSP_IMG  = 3u,
+#endif
 };
 
-#define PORT 8080
+#ifdef FIRESIM
+    #define PORT 10001
+#else
+    #define PORT 8080
+#endif
+
 #define QUEUE_SIZE 32
 
 static int SIM_STEP_SIZE = 100000000;

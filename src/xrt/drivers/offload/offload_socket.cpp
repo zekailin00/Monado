@@ -134,12 +134,22 @@ void *socket_thread(void* arg)
     pthread_exit(NULL);
 }
 
+bool isControlPack(message_packet_t* packet)
+{
+    if (packet->header.command == CS_DEFINE_STEP ||
+        packet->header.command == CS_GRANT_TOKEN ||
+        packet->header.command == CS_CFG_ROUTE)
+        return true;
+    return false;
+}
+
 void process_device(struct offload_hmd *hmd, int new_socket)
 {
     SOCKET_CHECK(new_socket);
     LOG("New device connected with ID: %d", new_socket);
     message_packet_t packet;
 
+#ifdef FIRESIM
     // # send firesim step 
     packet.header.command = CS_DEFINE_STEP;
     packet.header.payload_size = sizeof(int);
@@ -151,15 +161,49 @@ void process_device(struct offload_hmd *hmd, int new_socket)
     packet.header.payload_size = 0;
     tx_enqueue(&packet);
 
+    static int32_t REQ_POSE_CHN[2] = {CS_REQ_POSE, 1};
+    static int32_t RSP_POSE_CHN[2] = {CS_RSP_POSE, 1};
+    static int32_t RSP_IMG_CHN[2] = {CS_RSP_IMG, 0};
+
+    packet.header.command = CS_CFG_ROUTE;
+    packet.header.payload_size = sizeof(int32_t) * 2;
+    packet.payload = (char*) REQ_POSE_CHN;
+    tx_enqueue(&packet); 
+    packet.payload = (char*) RSP_POSE_CHN;
+    tx_enqueue(&packet); 
+    packet.payload = (char*) RSP_IMG_CHN;
+    tx_enqueue(&packet);
+#endif
+
     while (!hmd->stop)
     {
         // Handle TX
         if (tx_dequeue(&packet))
         {
+
+#ifdef FIRESIM
+            ssize_t size_sent = 0;
+            if (isControlPack(&packet))
+            {
+                size_sent = send(new_socket, &packet, sizeof(header_t), 0);
+                CONNECTION_CHECK(size_sent);
+                STATUS_CHECK(size_sent != sizeof(header_t), "DEBUG: failed to send header");
+            }
+            else // For Firesim connection, header is different for non-contorl packet
+            {
+                uint32_t latency = 0, big_step = 0;
+                size_sent += send(new_socket, &packet.header.command, sizeof(uint32_t), 0);
+                size_sent += send(new_socket, &big_step, sizeof(uint32_t), 0);
+                size_sent += send(new_socket, &latency, sizeof(uint32_t), 0);
+                size_sent += send(new_socket, &packet.header.payload_size, sizeof(uint32_t), 0);
+
+                STATUS_CHECK(size_sent != (sizeof(header_t) + 8), "DEBUG: failed to send header");
+            }
+#else
             ssize_t size_sent = send(new_socket, &packet, sizeof(header_t), 0);
             CONNECTION_CHECK(size_sent);
             STATUS_CHECK(size_sent != sizeof(header_t), "DEBUG: failed to send header");
-
+#endif
             if (packet.header.payload_size != 0)
             {
                 size_t index = 0;
