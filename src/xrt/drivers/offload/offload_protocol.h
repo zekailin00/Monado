@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#define FIRESIM
+// #define FIRESIM
 
 enum socket_protocol
 {
@@ -59,6 +59,9 @@ enum socket_protocol
 #define QUEUE_SIZE 32
 
 static int SIM_STEP_SIZE = 100000000;
+
+static const int FRAME_WIDTH = 1280;
+static const int FRAME_HEIGHT = 720;
 
 typedef struct header
 {

@@ -57,12 +57,39 @@ if(XRT_BUILD_DRIVER_SIMULATED)
 endif()
 
 if(XRT_BUILD_DRIVER_OFFLOAD)
-	add_library(
-		drv_offload STATIC offload/offload_hmd.c offload/offload_hmd.h
-					 offload/offload_socket.cpp offload/offload_socket.h
-				     offload/offload_interface.h offload/offload_prober.c
-		)
-	target_link_libraries(drv_offload PRIVATE xrt-interfaces aux_util)
+
+    find_package(PkgConfig REQUIRED)
+    # pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+    #     libavdevice
+    #     libavfilter
+    #     libavformat
+    #     libavcodec
+    #     libswresample
+    #     libswscale
+    #     libavutil
+    # )
+
+	add_library(drv_offload STATIC 
+        offload/offload_hmd.c offload/offload_hmd.h
+		offload/offload_socket.cpp offload/offload_socket.h
+		offload/offload_interface.h offload/offload_prober.c
+        offload/encoder.cpp offload/encoder.h
+	)
+    find_package(LibLZMA REQUIRED)
+    pkg_check_modules(LIBDRM REQUIRED libdrm)
+	target_link_libraries(drv_offload PUBLIC
+        xrt-interfaces
+        aux_util
+        /usr/local/lib/libavdevice.so
+        /usr/local/lib/libavfilter.so
+        /usr/local/lib/libavformat.so
+        /usr/local/lib/libavcodec.so
+        /usr/local/lib/libswresample.so
+        /usr/local/lib/libswscale.so
+        /usr/local/lib/libavutil.so
+        ${LIBLZMA_LIBRARIES}
+        ${LIBDRM_LIBRARIES}
+    )
     # target_include_directories(drv_offload PRIVATE offload)
 	list(APPEND ENABLED_HEADSET_DRIVERS offload)
 endif()

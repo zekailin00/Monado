@@ -164,8 +164,8 @@ offload_hmd_create(enum offload_movement movement, const struct xrt_pose *center
 
 	// Setup info.
 	struct u_device_simple_info info;
-	info.display.w_pixels = 1280;
-	info.display.h_pixels = 720;
+	info.display.w_pixels = FRAME_WIDTH;
+	info.display.h_pixels = FRAME_HEIGHT;
 	info.display.w_meters = 0.13f;
 	info.display.h_meters = 0.07f;
 	info.lens_horizontal_separation_meters = 0.13f / 2.0f;

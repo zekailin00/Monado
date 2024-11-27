@@ -1,6 +1,7 @@
 #include "offload_socket.h"
 #include "offload_hmd.h"
 #include "offload_protocol.h"
+#include "encoder.h"
 
 #include <netinet/in.h>
 #include <stdio.h>
@@ -45,23 +46,49 @@ std::map<int, std::queue<message_packet_t>> rx_queues;
 std::queue<message_packet_t> tx_queue;
 std::mutex lock;
 bool deviceConnected = false;
+Encoder* encoder;
 
 void tx_enqueue(message_packet_t* packet)
 {
     if (!deviceConnected)
         return;
+    
+    if (packet->header.payload_size > 0)
+    {
+        void* mem = malloc(packet->header.payload_size);
+        memcpy(mem, packet->payload, packet->header.payload_size);
+        packet->payload = (char *)mem;
+    }
+
     std::lock_guard<std::mutex> guard(lock);
     tx_queue.push(*packet);
 }
 
 bool tx_dequeue(message_packet_t* packet)
 {
-    std::lock_guard<std::mutex> guard(lock);
-    bool isEmpty = tx_queue.empty();
+    bool isEmpty;
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        isEmpty = tx_queue.empty();
+        if (!isEmpty)
+        {
+            *packet = tx_queue.front();
+            tx_queue.pop();
+        }
+    }
+
     if (!isEmpty)
     {
-        *packet = tx_queue.front();
-        tx_queue.pop();
+        if (packet->header.command == CS_RSP_IMG)
+        {
+            uint8_t *packets_data = nullptr; 
+            int size = encoder->EncodeFrame((uint8_t**)&packet->payload, &packets_data);
+            if (size <= 0)
+                return false;
+            
+            memcpy(packet->payload, packets_data, size);
+            packet->header.payload_size = size;
+        }
     }
     return !isEmpty;
 }
@@ -102,6 +129,12 @@ void *socket_thread(void* arg)
 
     int server_fd, new_socket;
     int opt = 1;
+
+    // Encoder for video compression
+    encoder = new Encoder(
+        FRAME_WIDTH, FRAME_HEIGHT, 300000,
+        AV_CODEC_ID_H264, AV_PIX_FMT_YUV422P
+    );
  
     // Creating socket file descriptor
     SOCKET_CHECK((server_fd = socket(AF_INET, SOCK_STREAM, 0)));
@@ -131,6 +164,7 @@ void *socket_thread(void* arg)
         tx_queue = std::queue<message_packet_t>();
     }
 
+    delete encoder;
     pthread_exit(NULL);
 }
 
@@ -216,6 +250,7 @@ void process_device(struct offload_hmd *hmd, int new_socket)
                     CONNECTION_CHECK(bytes_sent);
                     index += bytes_sent;
                 }
+                free(packet.payload);
             }
             LOG("DEBUG: [offload_socket.c] OUT cmd[%d] and size %d",
                 packet.header.command, packet.header.payload_size);
