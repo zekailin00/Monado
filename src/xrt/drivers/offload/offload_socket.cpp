@@ -132,7 +132,7 @@ void *socket_thread(void* arg)
 
     // Encoder for video compression
     encoder = new Encoder(
-        FRAME_WIDTH, FRAME_HEIGHT, 300000,
+        FRAME_WIDTH, FRAME_HEIGHT, 28, 50,
         AV_CODEC_ID_H264, AV_PIX_FMT_YUV422P
     );
  
